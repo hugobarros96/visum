@@ -14,6 +14,9 @@ from torch.utils.tensorboard import SummaryWriter
 from data_utilities import get_transform, collate_fn, LoggiPackageDataset
 from model_utilities import LoggiBarcodeDetectionModel, evaluate, visum2022score
 
+from segmentation_function import segNet
+
+
 # Random seeds
 torch.manual_seed(42)
 
@@ -22,7 +25,7 @@ torch.manual_seed(42)
 # Constant variables
 BATCH_SIZE = 1
 NUM_EPOCHS = 1
-IMG_SIZE = 128
+IMG_SIZE = 512
 VAL_MAP_FREQ = 1
 
 # Directories
@@ -60,7 +63,7 @@ print(f"Using device: {DEVICE}")
 
 
 # Define model
-model = LoggiBarcodeDetectionModel(min_img_size=IMG_SIZE, max_img_size=IMG_SIZE)
+model = segNet('VISUM_SEG', 1, num_classes=2, loss = 'iuo', n_filters=16, load = [], lr=0.0001, batchnorm=True, coordconv=True, train=True, net='resunet')
 
 # Print model summary
 model_summary = model.summary()
@@ -85,12 +88,9 @@ for epoch in range(NUM_EPOCHS):
     model.train()
 
     # Initialize lists of losses for tracking
-    losses_classifier = list()
-    losses_box_reg = list()
+
     losses_mask = list()
-    losses_objectness = list()
-    losses_rpn_box_reg = list()
-    losses_ = list()
+
 
     # Go through train loader
     for images, targets in tqdm.tqdm(train_loader):
@@ -101,17 +101,14 @@ for epoch in range(NUM_EPOCHS):
                      if k != 'image_fname'} for t in targets]
 
         # Compute loss
-        loss_dict = model(images, targets_)
-        losses = sum(loss for loss in loss_dict.values())
-        loss_value = losses.item()
+        loss_dict = model.get_input(images, targets_)
+
+        net.optimize_parameters()
+
+        _, _, error = net.get_loss()
 
         # Save loss values
-        losses_classifier.append(loss_dict['loss_classifier'].item())
-        losses_box_reg.append(loss_dict['loss_box_reg'].item())
-        losses_mask.append(loss_dict['loss_mask'].item())
-        losses_objectness.append(loss_dict['loss_objectness'].item())
-        losses_rpn_box_reg.append(loss_dict['loss_rpn_box_reg'].item())
-        losses_.append(loss_value)
+        losses_mask += error
 
         # Optimise models parameters
         optimizer.zero_grad()
@@ -119,29 +116,16 @@ for epoch in range(NUM_EPOCHS):
         optimizer.step()
 
     # Print loss values
-    print(f"Loss Classifier: {np.sum(losses_classifier) / len(train_set)}")
-    print(f"Loss Box Regression: {np.sum(losses_box_reg) / len(train_set)}")
+
     print(f"Loss Mask: {np.sum(losses_mask) / len(train_set)}")
-    print(f"Loss Objectness: {np.sum(losses_objectness) / len(train_set)}")
-    print(
-        f"Loss RPN Box Regression: {np.sum(losses_rpn_box_reg) / len(train_set)}")
-    print(f"Loss: {np.sum(losses_) / len(train_set)}")
+
 
     # Print loss values in tensorboard
-    tb.add_scalar('loss/clf', np.sum(
-        losses_classifier) / len(train_set), epoch)
-    tb.add_scalar('loss/boxreg', np.sum(
-        losses_box_reg) / len(train_set), epoch)
     tb.add_scalar('loss/mask', np.sum(
         losses_mask) / len(train_set), epoch)
-    tb.add_scalar('loss/obj', np.sum(
-        losses_objectness) / len(train_set), epoch)
-    tb.add_scalar('loss/rpn', np.sum(
-        losses_rpn_box_reg) / len(train_set), epoch)
-    tb.add_scalar('loss/total_loss', np.sum(
-        losses_) / len(train_set), epoch)
 
 
+    """
     if ((epoch + 1) % VAL_MAP_FREQ == 0) or (epoch == NUM_EPOCHS - 1):
         # Validation Phase
         eval_results = evaluate(model, val_loader, DEVICE)
@@ -161,7 +145,7 @@ for epoch in range(NUM_EPOCHS):
         tb.add_scalar('eval/bbox_map', bbox_map, epoch)
         tb.add_scalar('eval/segm_map', segm_map, epoch)
         tb.add_scalar('eval/visum_score', visum_score, epoch)
-
+    """
     torch.save({
         'epoch': epoch,
         'model_state_dict': model.state_dict(),

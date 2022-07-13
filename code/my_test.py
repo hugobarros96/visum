@@ -81,7 +81,7 @@ def evaluate(model, data_loader, device):
 
     # coco = get_coco_api_from_dataset(data_loader.dataset)
     coco = convert_to_coco_api(data_loader.dataset)
-    iou_types = ['bbox', 'segm']
+    iou_types = [ 'segm'] #'bbox'
     coco_evaluator = CocoEvaluator(coco, iou_types)
 
     for images, targets in tqdm(data_loader):
@@ -91,7 +91,7 @@ def evaluate(model, data_loader, device):
             torch.cuda.synchronize()
         outputs = model(images)
 
-        print(outputs, 'THIIIIIIIIIIIIIIIIIIIIIIIIISSSSS')
+        #print(outputs, 'THIIIIIIIIIIIIIIIIIIIIIIIIISSSSS')
         outputs = [{k: v.to(cpu_device) for k, v in t.items()}
                    for t in outputs]
 
@@ -118,3 +118,9 @@ def visum2022score(bboxes_mAP, masks_mAP, bboxes_mAP_weight=0.5):
     score = (bboxes_mAP_weight * bboxes_mAP) + (masks_mAP_weight * masks_mAP)
 
     return score
+
+
+
+def bbox_from_seg(segs):
+    for s in segs:
+
